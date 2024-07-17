@@ -1,0 +1,236 @@
+/*********************************************************************
+Descripción del Código:
+
+Este código permite controlar dos salidas PWM (PC4 y PA2) mediante UART. A través del pin RX se reciben comandos en forma de letras seguidas de un número separado por una coma. Las letras indican el tipo de acción a realizar, y el número (entre 0 y 1023) se usa para ajustar el ancho del pulso PWM.
+
+Comandos recibidos:
+'a' - Ambos pines (PA2 y PC4) tendrán el mismo ancho de pulso correspondiente al valor numérico recibido.
+'d' - El pin PA2 tendrá un ancho de pulso basado en el valor recibido, mientras que el pin PC4 tendrá un ancho de pulso reducido en 20 unidades.
+'i' - El pin PA2 tendrá un ancho de pulso reducido en 20 unidades, mientras que el pin PC4 tendrá un ancho de pulso basado en el valor recibido.
+'r' - Ambos pines (PA2 y PC4) tendrán un ancho de pulso de 0, apagándolos.
+El valor numérico del potenciómetro se mapea desde el rango 0-1023 a un rango PWM (0-479), y los pines PA2 y PC4 se actualizan en función del último comando recibido.
+
+ */
+
+
+#include "debug.h"
+
+/* Global Variables */
+char lastCommand = ' ';
+int lastPotValue = 0;
+
+/*********************************************************************
+ * @fn      USARTx_CFG
+ *
+ * @brief   Initializes the USART1 peripheral.
+ *
+ * @return  none
+ */
+void USARTx_CFG(void)
+{
+    GPIO_InitTypeDef  GPIO_InitStructure = {0};
+    USART_InitTypeDef USART_InitStructure = {0};
+
+    RCC_APB2PeriphClockCmd(RCC_APB2Periph_GPIOA | RCC_APB2Periph_USART1, ENABLE);
+
+    GPIO_InitStructure.GPIO_Pin = GPIO_Pin_5;
+    GPIO_InitStructure.GPIO_Speed = GPIO_Speed_50MHz;
+    GPIO_InitStructure.GPIO_Mode = GPIO_Mode_AF_PP;
+    GPIO_Init(GPIOA, &GPIO_InitStructure);
+    GPIO_InitStructure.GPIO_Pin = GPIO_Pin_6;
+    GPIO_InitStructure.GPIO_Mode = GPIO_Mode_IN_FLOATING;
+    GPIO_Init(GPIOA, &GPIO_InitStructure);
+
+    USART_InitStructure.USART_BaudRate = 9600;
+    USART_InitStructure.USART_WordLength = USART_WordLength_8b;
+    USART_InitStructure.USART_StopBits = USART_StopBits_1;
+    USART_InitStructure.USART_Parity = USART_Parity_No;
+    USART_InitStructure.USART_HardwareFlowControl = USART_HardwareFlowControl_None;
+    USART_InitStructure.USART_Mode = USART_Mode_Tx | USART_Mode_Rx;
+
+    USART_Init(USART1, &USART_InitStructure);
+    USART_Cmd(USART1, ENABLE);
+}
+
+/*********************************************************************
+ * @fn      TIM1_PWMOut_Init
+ *
+ * @brief   Initializes TIM1 PWM output on specified channel.
+ *
+ * @param   arr - the period value.
+ *          psc - the prescaler value.
+ *          ccp - the pulse value.
+ *          channel - the TIM channel to configure (2 or 4).
+ *
+ * @return  none
+ */
+void TIM1_PWMOut_Init(u16 arr, u16 psc, u16 ccp, u8 channel)
+{
+    GPIO_PinRemapConfig(AFIO_PCFR1_PA12_REMAP, DISABLE);
+    GPIO_InitTypeDef GPIO_InitStructure = {0};
+    TIM_OCInitTypeDef TIM_OCInitStructure = {0};
+    TIM_TimeBaseInitTypeDef TIM_TimeBaseInitStructure = {0};
+
+    RCC_APB2PeriphClockCmd(RCC_APB2Periph_GPIOA | RCC_APB2Periph_GPIOC | RCC_APB2Periph_TIM1, ENABLE);
+
+    TIM_TimeBaseInitStructure.TIM_Period = arr;
+    TIM_TimeBaseInitStructure.TIM_Prescaler = psc;
+    TIM_TimeBaseInitStructure.TIM_ClockDivision = TIM_CKD_DIV1;
+    TIM_TimeBaseInitStructure.TIM_CounterMode = TIM_CounterMode_Up;
+    TIM_TimeBaseInit(TIM1, &TIM_TimeBaseInitStructure);
+
+    if (channel == 2) {
+        // Initialize PA2 for TIM1 CH2N
+        GPIO_InitStructure.GPIO_Pin = GPIO_Pin_2;
+        GPIO_InitStructure.GPIO_Mode = GPIO_Mode_AF_PP;
+        GPIO_InitStructure.GPIO_Speed = GPIO_Speed_10MHz;
+        GPIO_Init(GPIOA, &GPIO_InitStructure);
+
+        // Initialize TIM1 CH2N
+        TIM_OCInitStructure.TIM_OCMode = TIM_OCMode_PWM1;
+        TIM_OCInitStructure.TIM_OutputState = TIM_OutputState_Enable;
+        TIM_OCInitStructure.TIM_OCPolarity = TIM_OCPolarity_High;
+        TIM_OCInitStructure.TIM_OCNPolarity = TIM_OCNPolarity_Low; // Complementary polarity
+        TIM_OCInitStructure.TIM_OutputNState = TIM_OutputNState_Enable; // Enable complementary output
+        TIM_OCInitStructure.TIM_Pulse = ccp;
+        TIM_OC2Init(TIM1, &TIM_OCInitStructure);
+        TIM_OC2PreloadConfig(TIM1, TIM_OCPreload_Enable);
+    } else if (channel == 4) {
+        // Initialize PC4 for TIM1 CH4
+        GPIO_InitStructure.GPIO_Pin = GPIO_Pin_4;
+        GPIO_InitStructure.GPIO_Mode = GPIO_Mode_AF_PP;
+        GPIO_InitStructure.GPIO_Speed = GPIO_Speed_10MHz;
+        GPIO_Init(GPIOC, &GPIO_InitStructure);
+
+        // Initialize TIM1 CH4
+        TIM_OCInitStructure.TIM_OCMode = TIM_OCMode_PWM1;
+        TIM_OCInitStructure.TIM_OutputState = TIM_OutputState_Enable;
+        TIM_OCInitStructure.TIM_OCPolarity = TIM_OCPolarity_High;
+        TIM_OCInitStructure.TIM_Pulse = ccp;
+        TIM_OC4Init(TIM1, &TIM_OCInitStructure);
+        TIM_OC4PreloadConfig(TIM1, TIM_OCPreload_Enable);
+    }
+
+    TIM_ARRPreloadConfig(TIM1, ENABLE);
+    TIM_Cmd(TIM1, ENABLE);
+    TIM_CtrlPWMOutputs(TIM1, ENABLE);
+}
+
+/*********************************************************************
+ * @fn      main
+ *
+ * @brief   Main program.
+ *
+ * @return  none
+ */
+int main(void)
+{
+    SystemCoreClockUpdate();
+    Delay_Init();
+
+    // Initialize UART
+    USARTx_CFG();
+
+    // Parameters for PWM
+    u16 arr = 479;  // Period value (480-1)
+    u16 psc = 119;  // Prescaler value (120-1) to get 1kHz
+    u16 ccp = 0;    // Initial pulse width
+
+    // Initialize PWM for both channels
+    TIM1_PWMOut_Init(arr, psc, ccp, 4);  // For TIM1 CH4 on PC4
+    TIM1_PWMOut_Init(arr, psc, ccp, 2);  // For TIM1 CH2N on PA2
+
+    // Variables to hold received data
+    char receivedChar;
+    char command;
+    int potentiometerValue = 0;
+
+    while (1)
+    {
+        // Check if data has been received via UART
+        if (USART_GetFlagStatus(USART1, USART_FLAG_RXNE) != RESET)
+        {
+            receivedChar = USART_ReceiveData(USART1);
+
+            // Simple state machine to handle input
+            if (receivedChar >= '0' && receivedChar <= '9')
+            {
+                potentiometerValue = potentiometerValue * 10 + (receivedChar - '0');
+            }
+            else if (receivedChar == ',' || receivedChar == '\n')
+            {
+                // Potentiometer value received
+                lastPotValue = potentiometerValue;
+                potentiometerValue = 0;
+            }
+            else
+            {
+                // Handle command
+                if (receivedChar == 'a' || receivedChar == 'd' || receivedChar == 'i' || receivedChar == 'r')
+                {
+                    lastCommand = receivedChar;
+                }
+            }
+        }
+
+        // Map potentiometer value to PWM range (0-479)
+        int pwmValue = map(lastPotValue, 0, 1023, 0, 479);
+
+        // Execute the last received command and potentiometer value
+        switch (lastCommand)
+        {
+            case 'a': // Forward
+                TIM_SetCompare4(TIM1, pwmValue);  // Update TIM1 CH4
+                TIM_SetCompare2(TIM1, pwmValue);  // Update TIM1 CH2N
+                break;
+            case 'd': // Right
+                TIM_SetCompare4(TIM1, max(pwmValue - 20, 0)); // Adjust values as needed
+                TIM_SetCompare2(TIM1, pwmValue);
+                break;
+            case 'i': // Left
+                TIM_SetCompare4(TIM1, pwmValue);
+                TIM_SetCompare2(TIM1, max(pwmValue - 20, 0)); // Adjust values as needed
+                break;
+            case 'r': // Reverse
+                TIM_SetCompare4(TIM1, 0);
+                TIM_SetCompare2(TIM1, 0);
+                break;
+            default:
+                // Continue executing the last valid command if an unknown command is received
+                break;
+        }
+    }
+}
+
+/*********************************************************************
+ * @fn      map
+ *
+ * @brief   Maps a value from one range to another.
+ *
+ * @param   x - the value to map.
+ *          in_min - the minimum value of the input range.
+ *          in_max - the maximum value of the input range.
+ *          out_min - the minimum value of the output range.
+ *          out_max - the maximum value of the output range.
+ *
+ * @return  the mapped value.
+ */
+int map(int x, int in_min, int in_max, int out_min, int out_max)
+{
+    return (x - in_min) * (out_max - out_min) / (in_max - in_min) + out_min;
+}
+
+/*********************************************************************
+ * @fn      max
+ *
+ * @brief   Returns the maximum of two values.
+ *
+ * @param   a - first value.
+ *          b - second value.
+ *
+ * @return  the maximum value.
+ */
+int max(int a, int b)
+{
+    return (a > b) ? a : b;
+}
