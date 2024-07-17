@@ -1,3 +1,12 @@
+/*********************************************************************
+Codigo testeado en CH32V003J4
+Descripción del Código:
+Este código configura el temporizador TIM1 para generar señales PWM sincronizadas en los pines PC4 (canal TIM1 CH4) y PA2 (canal TIM1 CH2N).
+PC4 utiliza una señal PWM normal, mientras que PA2 utiliza una señal PWM complementaria. El código realiza un desvanecimiento (fade) sincronizado:
+aumenta el ancho de pulso en PC4 mientras disminuye el ancho de pulso en PA2 durante el fade-in, y viceversa durante el fade-out.
+
+ */
+
 #include "debug.h"
 
 
