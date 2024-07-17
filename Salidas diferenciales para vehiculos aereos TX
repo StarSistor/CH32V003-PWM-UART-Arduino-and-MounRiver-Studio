@@ -1,0 +1,133 @@
+/* 
+ El codigo proporcionado acontinuacion funciona correctamente al subrse con arduino IDE.
+ Necesitaras instalar: https://github.com/openwch/board_manager_files/raw/main/package_ch32v_index.json
+ y este funciona con: Salidas diferenciales para vehiculos aereos
+//A6
+15 - VCC
+14 - GND
+9 - TX
+10- RX
+
+*/
+
+const int buttonPinA = PC1; // Pin for 'a' button (forward)
+const int buttonPinD = PC2; // Pin for 'd' button (right)
+const int buttonPinI = PC3; // Pin for 'i' button (left)
+const int buttonPinR = PC6; // Pin for 'r' button (reverse)
+const int potPin = PC4; // Pin for potentiometer
+
+void setup() {
+  Serial.begin(9600); // Initialize UART communication
+  pinMode(buttonPinA, INPUT_PULLUP);
+  pinMode(buttonPinD, INPUT_PULLUP);
+  pinMode(buttonPinI, INPUT_PULLUP);
+  pinMode(buttonPinR, INPUT_PULLUP);
+}
+
+void loop() {
+  int potValue = analogRead(potPin); // Read potentiometer value
+
+  if (digitalRead(buttonPinA) == LOW) { // Button pressed
+    Serial.print('a');
+    Serial.print(',');
+    Serial.println(potValue);
+    delay(300); // Debounce delay
+  }
+  if (digitalRead(buttonPinD) == LOW) { // Button pressed
+    Serial.print('d');
+    Serial.print(',');
+    Serial.println(potValue);
+    delay(300); // Debounce delay
+  }
+  if (digitalRead(buttonPinI) == LOW) { // Button pressed
+    Serial.print('i');
+    Serial.print(',');
+    Serial.println(potValue);
+    delay(300); // Debounce delay
+  }
+  if (digitalRead(buttonPinR) == LOW) { // Button pressed
+    Serial.print('r');
+    Serial.print(',');
+    Serial.println(potValue);
+    delay(300); // Debounce delay
+  }
+}
+
+/*
+J4 - Solo se puede subir ecofo una vez mediante arduino y rx no funciona por ello es mejor utilizar directamente mounriverstudio.
+En este ultimo el codigo si no se emplea tx se puede volver ausbir varias veces. pero se se lo utiliza solo una vez ya que swdio
+es el mismo pin de RX. 
+
+Este codigo aun no funciona en el entorno arduino, tampoco con el CH32V003A6 si se sube con arduino por loq eu en actualizaciones futuras
+puede que si.
+
+1 - RX
+2 - GND
+4 - 3.3V
+8 - SWIO - TX
+*/
+
+const int motorPin1 = PA1; // Motor control pin 1
+const int motorPin2 = PC4; // Motor control pin 2
+
+char lastCommand = ' ';
+int lastPotValue = 0;
+const int frequency = 500; // Frequency in Hz for PWM
+
+void setup() {
+  Serial.begin(9600); // Initialize UART communication
+  pinMode(motorPin1, OUTPUT);
+  pinMode(motorPin2, OUTPUT);
+}
+
+void loop() {
+  if (Serial.available() > 0) {
+    String receivedString = Serial.readStringUntil('\n'); // Read the incoming string
+    int commaIndex = receivedString.indexOf(','); // Find the comma in the string
+
+    if (commaIndex > 0) {
+      char receivedChar = receivedString.charAt(0); // Get the command character
+      int receivedPotValue = receivedString.substring(commaIndex + 1).toInt(); // Get the potentiometer value
+
+      if (receivedChar == 'a' || receivedChar == 'd' || receivedChar == 'i' || receivedChar == 'r') {
+        lastCommand = receivedChar;
+        lastPotValue = receivedPotValue;
+      }
+    }
+  }
+
+  // Execute the last received command and potentiometer value
+  switch (lastCommand) {
+    case 'a': // Forward
+      createPWM(motorPin1, map(lastPotValue, 0, 1023, 0, 255), frequency);
+      createPWM(motorPin2, map(lastPotValue, 0, 1023, 0, 255), frequency);
+      break;
+    case 'd': // Right
+      createPWM(motorPin1, map(lastPotValue, 0, 1023, 0, 255) - 10, frequency); // Adjust values as needed
+      createPWM(motorPin2, map(lastPotValue, 0, 1023, 0, 255), frequency);
+      break;
+    case 'i': // Left
+      createPWM(motorPin1, map(lastPotValue, 0, 1023, 0, 255), frequency);
+      createPWM(motorPin2, map(lastPotValue, 0, 1023, 0, 255) - 10, frequency); // Adjust values as needed
+      break;
+    case 'r': // Reverse
+      createPWM(motorPin1, 0, frequency);
+      createPWM(motorPin2, 0, frequency);
+      break;
+    default:
+      // Continue executing the last valid command if an unknown command is received
+      break;
+  }
+}
+
+void createPWM(int pin, int dutyCycle, int frequency) {
+  int period = 1000000 / frequency; // Calculate the period in microseconds
+  int highTime = (dutyCycle * period) / 255; // Calculate high time based on duty cycle
+  int lowTime = period - highTime; // Calculate low time
+
+  digitalWrite(pin, HIGH); // Set the pin high
+  delayMicroseconds(highTime); // Wait for the high time
+
+  digitalWrite(pin, LOW); // Set the pin low
+  delayMicroseconds(lowTime); // Wait for the low time
+}
