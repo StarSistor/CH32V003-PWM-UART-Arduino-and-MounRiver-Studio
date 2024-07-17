@@ -1,4 +1,5 @@
 /*********************************************************************
+Codigo testeado en CH32V003J4
 Descripción del Código:
 
 Este código permite controlar dos salidas PWM (PC4 y PA2) mediante UART. A través del pin RX se reciben comandos en forma de letras seguidas de un número separado por una coma. Las letras indican el tipo de acción a realizar, y el número (entre 0 y 1023) se usa para ajustar el ancho del pulso PWM.
